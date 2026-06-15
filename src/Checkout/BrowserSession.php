@@ -58,6 +58,31 @@ final class BrowserSession
         return $response;
     }
 
+    /**
+     * POST that submits a form as a top-level navigation (returns an HTML page),
+     * e.g. the payment page form submission. Unlike postForm() this sends
+     * document/navigate headers and no X-Requested-With.
+     */
+    public function postFormNavigate(string $url, array $data, array $headers = []): Response
+    {
+        $resolved = $this->resolveUrl($url);
+
+        $response = $this->httpClient->request(
+            'POST',
+            $resolved,
+            $this->headers($this->navigationPostHeaders(), array_replace([
+                'Content-Type' => 'application/x-www-form-urlencoded',
+            ], $headers)),
+            http_build_query($data, '', '&', PHP_QUERY_RFC1738),
+            $this->cookieJar,
+            $this->config->timeout()
+        );
+
+        $this->referer = $resolved;
+
+        return $response;
+    }
+
     public function cookieJar(): CookieJar
     {
         return $this->cookieJar;
@@ -91,6 +116,26 @@ final class BrowserSession
     }
 
     /**
+     * Top-level form submission that navigates to a new HTML page (e.g. the
+     * payment page). Like a navigation GET but with an Origin header.
+     *
+     * @return array<string, string>
+     */
+    private function navigationPostHeaders(): array
+    {
+        return [
+            'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language' => 'tr-TR,tr;q=0.9,en;q=0.8',
+            'Origin' => $this->config->frontendBaseUrl(),
+            'Upgrade-Insecure-Requests' => '1',
+            'Sec-Fetch-Site' => 'same-origin',
+            'Sec-Fetch-Mode' => 'navigate',
+            'Sec-Fetch-User' => '?1',
+            'Sec-Fetch-Dest' => 'document',
+        ];
+    }
+
+    /**
      * In-page API call (the XHR/fetch requests the storefront JS makes).
      *
      * @return array<string, string>
@@ -101,6 +146,7 @@ final class BrowserSession
             'Accept' => 'application/json, text/javascript, */*; q=0.01',
             'Accept-Language' => 'tr-TR,tr;q=0.9,en;q=0.8',
             'X-Requested-With' => 'XMLHttpRequest',
+            'Origin' => $this->config->frontendBaseUrl(),
             'Sec-Fetch-Site' => 'same-origin',
             'Sec-Fetch-Mode' => 'cors',
             'Sec-Fetch-Dest' => 'empty',

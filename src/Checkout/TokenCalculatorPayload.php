@@ -19,11 +19,13 @@ final class TokenCalculatorPayload
 
     public function toString(): string
     {
-        return '[' . $this->customer->email . ']'
-            . '[' . $this->customer->countryCodeDigits() . ']'
-            . '[' . $this->customer->phoneDigits() . ']'
-            . '[' . $this->customer->firstName . ']'
-            . '[' . $this->customer->lastName . ']'
-            . '[' . $this->customer->country . ']';
+        // Shopier concatenates the buyer fields with no separators, e.g.
+        // "anilgfx0@gmail.comTR5555555555AnılFidanTürkiye".
+        return $this->customer->email
+            . $this->customer->countryCode()
+            . $this->customer->phoneDigits()
+            . $this->customer->firstName
+            . $this->customer->lastName
+            . $this->customer->countryDisplayName();
     }
 }

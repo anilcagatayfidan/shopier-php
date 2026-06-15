@@ -46,11 +46,61 @@ final class Customer
         }
     }
 
+    /**
+     * Localized country names as Shopier's (Turkish) storefront expects them in
+     * the shipment form's `country` field. Falls back to the raw value for codes
+     * not listed here.
+     */
+    private const COUNTRY_NAMES = [
+        'TR' => 'Türkiye',
+        'US' => 'Amerika Birleşik Devletleri',
+        'DE' => 'Almanya',
+        'GB' => 'Birleşik Krallık',
+        'NL' => 'Hollanda',
+        'FR' => 'Fransa',
+        'AT' => 'Avusturya',
+        'BE' => 'Belçika',
+        'CH' => 'İsviçre',
+        'AZ' => 'Azerbaycan',
+    ];
+
     public function normalizedCountryCode(): string
     {
         $digits = preg_replace('/\D+/', '', $this->phoneCountryCode) ?? '';
 
         return '+' . $digits;
+    }
+
+    /**
+     * ISO country code used by the storefront phone-country selector
+     * (`phone-contact-select`), e.g. "TR".
+     */
+    public function countryCode(): string
+    {
+        return strtoupper(trim($this->country));
+    }
+
+    /**
+     * Localized country name used in the storefront `country` field, e.g. "Türkiye".
+     */
+    public function countryDisplayName(): string
+    {
+        return self::COUNTRY_NAMES[$this->countryCode()] ?? $this->country;
+    }
+
+    /**
+     * National phone number with the storefront's display grouping (no country
+     * code), e.g. "555 555 55 55" for TR. Falls back to the raw digits.
+     */
+    public function nationalPhoneFormatted(): string
+    {
+        $digits = $this->phoneDigits();
+
+        if ($this->countryCodeDigits() === '90' && strlen($digits) === 10) {
+            return substr($digits, 0, 3) . ' ' . substr($digits, 3, 3) . ' ' . substr($digits, 6, 2) . ' ' . substr($digits, 8, 2);
+        }
+
+        return $digits;
     }
 
     public function countryCodeDigits(): string

@@ -8,7 +8,6 @@ use Shopier\Config;
 use Shopier\DTO\Customer;
 use Shopier\DTO\PaymentUrlRequest;
 use Shopier\DTO\PaymentUrlResult;
-use Shopier\DTO\Product;
 use Shopier\DTO\ProductCreateRequest;
 use Shopier\Exception\CheckoutFlowException;
 use Shopier\Exception\ValidationException;
@@ -47,22 +46,56 @@ final class PaymentUrlGenerator
         $shopName = $this->htmlParser->extractShopName($productPage->body());
         $csrfToken = $this->htmlParser->extractCsrfToken($productPage->body());
 
-        $this->checkPaymentProgress($shopName, $product, $request->quantity);
+        $storefrontProductId = $this->extractStorefrontProductId($product->url);
+        $this->addToCart($shopName, $storefrontProductId, $request->quantity, $csrfToken);
+        $this->checkPaymentProgress($shopName, $storefrontProductId, $request->quantity, $csrfToken);
         $shippingUrl = $this->frontendUrl('/s/shipping/' . rawurlencode($shopName));
         $shippingPage = $this->browserSession->get($shippingUrl);
         $this->assertFrontendSuccess($shippingPage, $shippingUrl, 'Shipping page could not be loaded.');
-        $this->generateToken($request->customer);
-        $orderId = $this->processShipmentForm($shopName, $request->customer, $csrfToken);
+        $formToken = $this->generateToken($request->customer);
+        $orderId = $this->processShipmentForm($shopName, $request->customer);
         $paymentUrl = $this->frontendUrl('/s/payment/' . rawurlencode($shopName) . '/' . rawurlencode($orderId));
-        $paymentPage = $this->browserSession->get($paymentUrl);
+        $paymentPage = $this->submitPaymentPage($paymentUrl, $request->customer, $formToken);
         $this->assertFrontendSuccess($paymentPage, $paymentUrl, 'Payment page could not be loaded.');
-        $paymentCsrfToken = $this->htmlParser->extractCsrfToken($paymentPage->body());
-        $this->validateCouponState($shopName, $orderId, $paymentCsrfToken);
 
         return new PaymentUrlResult($product, $shopName, $orderId, $paymentUrl);
     }
 
-    private function checkPaymentProgress(string $shopName, Product $product, int $quantity): void
+    /**
+     * Adds the product to the storefront cart (Shopier spells it "chart"). This is
+     * the step that actually populates the cart; without it the later shipment form
+     * returns {"status":"error","error":"Chart is empty"}. Returns nothing on success
+     * ({"status":1, "basket": {...}}).
+     */
+    private function addToCart(string $shopName, string $productId, int $quantity, string $csrfToken): void
+    {
+        if ($quantity < 1) {
+            throw new ValidationException('Quantity must be greater than zero.');
+        }
+
+        $url = $this->frontendUrl('/s/api/v1/add_chart_item/' . rawurlencode($shopName));
+        $response = $this->browserSession->postForm(
+            $url,
+            [
+                'product_id' => $productId,
+                'quantity' => $quantity,
+            ],
+            ['x-csrf-token' => $csrfToken]
+        );
+
+        $this->assertFrontendSuccess($response, $url, 'Add to cart request failed.');
+        $data = $response->json();
+
+        if ((int) ($data['status'] ?? 0) !== 1) {
+            throw new CheckoutFlowException(
+                'Add to cart (add_chart_item) did not succeed.'
+                . ' URL: ' . $url
+                . '. Response body (first 300 chars): ' . substr(trim($response->body()), 0, 300)
+            );
+        }
+    }
+
+    private function checkPaymentProgress(string $shopName, string $productId, int $quantity, string $csrfToken): void
     {
         if ($quantity < 1) {
             throw new ValidationException('Quantity must be greater than zero.');
@@ -72,9 +105,10 @@ final class PaymentUrlGenerator
         $response = $this->browserSession->postForm(
             $url,
             [
-                'product_id' => $product->id,
+                'product_id' => $productId,
                 'quantity' => $quantity,
-            ]
+            ],
+            ['x-csrf-token' => $csrfToken]
         );
 
         $this->assertFrontendSuccess($response, $url, 'Payment progress request failed.');
@@ -85,7 +119,7 @@ final class PaymentUrlGenerator
         }
     }
 
-    private function generateToken(Customer $customer): void
+    private function generateToken(Customer $customer): string
     {
         $url = $this->frontendUrl('/s/api/v1/token_calculator');
         $response = $this->browserSession->postForm(
@@ -100,52 +134,72 @@ final class PaymentUrlGenerator
         if (($data['status'] ?? null) !== 'token_generated') {
             throw new CheckoutFlowException('Token calculator did not return status token_generated.');
         }
+
+        $token = $data['token'] ?? null;
+
+        if (!is_string($token) || trim($token) === '') {
+            throw new CheckoutFlowException('Token calculator did not return a token.');
+        }
+
+        return $token;
     }
 
-    private function processShipmentForm(string $shopName, Customer $customer, string $csrfToken): string
+    /**
+     * Buyer fields shared by the shipment form and the payment page submission.
+     *
+     * @return array<string, string>
+     */
+    private function customerFormData(Customer $customer): array
+    {
+        return [
+            'Email' => $customer->email,
+            'phone-contact-select' => $customer->countryCode(),
+            'formControlPhone' => $customer->nationalPhoneFormatted(),
+            'Phone' => $customer->formattedPhone(),
+            'FirstName' => $customer->firstName,
+            'LastName' => $customer->lastName,
+            'country' => $customer->countryDisplayName(),
+            'TCIDNo' => '',
+            'Comment' => '',
+        ];
+    }
+
+    private function processShipmentForm(string $shopName, Customer $customer): string
     {
         $url = $this->frontendUrl('/s/api/v1/shipment_form_process/' . rawurlencode($shopName));
+        $formData = $this->customerFormData($customer);
         $response = $this->browserSession->postForm(
             $url,
-            [
-                'Email' => $customer->email,
-                'phone-contact-select' => $customer->normalizedCountryCode(),
-                'formControlPhone' => $customer->phoneDigits(),
-                'Phone' => $customer->formattedPhone(),
-                'FirstName' => $customer->firstName,
-                'LastName' => $customer->lastName,
-                'country' => $customer->country,
-                'TCIDNo' => '',
-                'Comment' => '',
-            ],
-            ['x-csrf-token' => $csrfToken]
+            $formData,
+            ['x-csrf-token' => '']
         );
 
         $this->assertFrontendSuccess($response, $url, 'Shipment form request failed.');
         $data = $response->json();
-        $orderId = $data['order_id'] ?? $data['orderId'] ?? null;
+        $orderId = $data['order_id']
+            ?? $data['orderId']
+            ?? $data['data']['order_id']
+            ?? $data['data']['orderId']
+            ?? null;
 
         if (!is_scalar($orderId) || trim((string) $orderId) === '') {
-            throw new CheckoutFlowException('Shipment form response does not include order_id.');
+            throw new CheckoutFlowException(
+                'Shipment form response does not include order_id.'
+                . ' URL: ' . $url
+                . '. HTTP status: ' . $response->statusCode()
+                . '. Response body (first 500 chars): ' . substr(trim($response->body()), 0, 500)
+            );
         }
 
         return (string) $orderId;
     }
 
-    private function validateCouponState(string $shopName, string $orderId, string $csrfToken): void
+    private function submitPaymentPage(string $paymentUrl, Customer $customer, string $formToken): Response
     {
-        $response = $this->browserSession->postForm(
-            $this->frontendUrl('/s/api/v1/coupon_code/' . rawurlencode($shopName)),
-            [
-                'request_type' => 'check_coupon_code_validity',
-                'order_id' => $orderId,
-            ],
-            ['x-csrf-token' => $csrfToken]
-        );
+        $formData = $this->customerFormData($customer);
+        $formData['form_token'] = $formToken;
 
-        if ($response->statusCode() !== 200 || trim($response->body()) !== '1') {
-            throw new CheckoutFlowException('Coupon code validation step did not return success.');
-        }
+        return $this->browserSession->postFormNavigate($paymentUrl, $formData);
     }
 
     /**
@@ -228,6 +282,23 @@ final class PaymentUrlGenerator
     private function sleepMs(int $milliseconds): void
     {
         usleep($milliseconds * 1000);
+    }
+
+    /**
+     * The storefront identifies a product by the numeric id in its public URL
+     * (e.g. https://www.shopier.com/48081835 -> "48081835"), which differs from
+     * the REST API product id. The cart/check_payment_progress step needs this
+     * storefront id, otherwise the item is never added and the cart stays empty.
+     */
+    private function extractStorefrontProductId(string $url): string
+    {
+        $path = parse_url($url, PHP_URL_PATH);
+
+        if (is_string($path) && preg_match('/(\d+)(?!.*\d)/', $path, $matches) === 1) {
+            return $matches[1];
+        }
+
+        throw new CheckoutFlowException('Could not determine the storefront product id from URL: ' . $url . '.');
     }
 
     private function frontendUrl(string $path): string
