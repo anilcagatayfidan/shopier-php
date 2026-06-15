@@ -297,6 +297,39 @@ try {
 }
 ```
 
+### Timeout ve Cloudflare için dayanıklılık
+
+Checkout akışında zaman aşımı (timeout) ve Cloudflare challenge durumları artık
+tipli, yakalanabilir exception'lar fırlatır. Tüm exception'lar `ShopierException`'dan
+türediği için tek tek ya da topluca yakalanabilir.
+
+- `TimeoutException` — istek zaman aşımına uğradı. Idempotent **GET** istekleri
+  paket içinde otomatik olarak (varsayılan 2 deneme, üstel backoff) yeniden denenir.
+  POST istekleri (sepete ekleme, sipariş oluşturma) sipariş tekrarını önlemek için
+  otomatik denenmez — bu exception'ı yakalayıp job'ınızı yeniden kuyruğa alabilirsiniz.
+- `CloudflareChallengeException` — storefront bir bot/JS challenge döndürdü
+  (`getStatusCode()` ve `getResponseBody()` ile detaya erişilir). Aynı IP'den tekrar
+  denemek çözmez; `CurlImpersonateHttpClient`'a geçin veya temiz bir IP/job kullanın.
+
+```php
+use Shopier\Exception\CloudflareChallengeException;
+use Shopier\Exception\TimeoutException;
+use Shopier\Exception\CheckoutFlowException;
+
+try {
+    $result = $client->checkout()->createProductAndPaymentUrl($productRequest, $customer, 1);
+} catch (CloudflareChallengeException $e) {
+    // TLS impersonation'a geç / temiz IP'li bir worker'da tekrar dene
+    report($e);
+} catch (TimeoutException $e) {
+    // job'ı backoff ile yeniden kuyruğa al
+    $this->release(30);
+} catch (CheckoutFlowException $e) {
+    // diğer akış hataları (sepet, form, vb.) — mesaj tanılayıcı bilgi içerir
+    logger()->warning($e->getMessage());
+}
+```
+
 ## Lisans
 
 MIT License.

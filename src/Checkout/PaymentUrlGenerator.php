@@ -10,6 +10,7 @@ use Shopier\DTO\PaymentUrlRequest;
 use Shopier\DTO\PaymentUrlResult;
 use Shopier\DTO\ProductCreateRequest;
 use Shopier\Exception\CheckoutFlowException;
+use Shopier\Exception\CloudflareChallengeException;
 use Shopier\Exception\ValidationException;
 use Shopier\Http\Response;
 use Shopier\Resources\Products;
@@ -246,16 +247,23 @@ final class PaymentUrlGenerator
             . ' URL: ' . $url
             . '. HTTP status: ' . $response->statusCode() . '.';
 
-        if ($this->looksLikeChallenge($response)) {
+        $isChallenge = $this->looksLikeChallenge($response);
+
+        if ($isChallenge) {
             $detail .= ' The storefront returned a bot/JS challenge (e.g. Cloudflare "Just a moment..."/'
                 . '"Attention Required"). This cannot be bypassed with HTTP headers alone — the checkout '
-                . 'flow requires a real browser session cookie or an official payment-link endpoint. See README.';
+                . 'flow requires a TLS-impersonation client (CurlImpersonateHttpClient), a cleaner/residential '
+                . 'IP, or a real browser session. See README.';
         }
 
         $body = trim($response->body());
 
         if ($body !== '') {
             $detail .= ' Response body (first 500 chars): ' . substr($body, 0, 500);
+        }
+
+        if ($isChallenge) {
+            throw new CloudflareChallengeException($detail, $response->statusCode(), $response->body());
         }
 
         throw new CheckoutFlowException($detail);

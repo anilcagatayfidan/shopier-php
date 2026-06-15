@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Shopier\Http;
 
 use Shopier\Exception\ShopierException;
+use Shopier\Exception\TimeoutException;
 
 final class CurlHttpClient implements HttpClientInterface
 {
     private const MAX_REDIRECTS = 5;
+
+    // CURLE_OPERATION_TIMEDOUT
+    private const CURL_TIMEOUT = 28;
 
     public function request(
         string $method,
@@ -107,8 +111,16 @@ final class CurlHttpClient implements HttpClientInterface
 
         if ($rawBody === false) {
             $error = curl_error($handle);
+            $errno = curl_errno($handle);
             curl_close($handle);
-            throw new ShopierException($error !== '' ? $error : 'HTTP request failed.');
+
+            $message = $error !== '' ? $error : 'HTTP request failed.';
+
+            if ($errno === self::CURL_TIMEOUT) {
+                throw new TimeoutException('Request to ' . $url . ' timed out: ' . $message);
+            }
+
+            throw new ShopierException($message);
         }
 
         $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);

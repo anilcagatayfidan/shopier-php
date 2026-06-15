@@ -5,37 +5,78 @@ declare(strict_types=1);
 namespace Shopier\Checkout;
 
 use Shopier\Config;
+use Shopier\Exception\TimeoutException;
 use Shopier\Http\CookieJar;
 use Shopier\Http\HttpClientInterface;
 use Shopier\Http\Response;
 
 final class BrowserSession
 {
+    private const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
     private ?string $referer = null;
 
+    /**
+     * @param int $maxRetries How many extra attempts to make for GET requests that
+     *                        hit a timeout or a transient 429/5xx. POSTs are never
+     *                        auto-retried (they may create an order server-side).
+     */
     public function __construct(
         private readonly Config $config,
         private readonly HttpClientInterface $httpClient,
-        private readonly CookieJar $cookieJar = new CookieJar()
+        private readonly CookieJar $cookieJar = new CookieJar(),
+        private readonly int $maxRetries = 2
     ) {
     }
 
     public function get(string $url, array $headers = []): Response
     {
         $resolved = $this->resolveUrl($url);
+        $attempt = 0;
 
-        $response = $this->httpClient->request(
-            'GET',
-            $resolved,
-            $this->headers($this->navigationHeaders(), $headers),
-            null,
-            $this->cookieJar,
-            $this->config->timeout()
-        );
+        while (true) {
+            try {
+                $response = $this->httpClient->request(
+                    'GET',
+                    $resolved,
+                    $this->headers($this->navigationHeaders(), $headers),
+                    null,
+                    $this->cookieJar,
+                    $this->config->timeout()
+                );
+            } catch (TimeoutException $exception) {
+                // Idempotent GET — safe to retry on timeout.
+                if ($attempt >= $this->maxRetries) {
+                    throw $exception;
+                }
 
-        $this->referer = $resolved;
+                $this->sleepBeforeRetry($attempt);
+                $attempt++;
+                continue;
+            }
 
-        return $response;
+            if ($this->isRetryable($response->statusCode()) && $attempt < $this->maxRetries) {
+                $this->sleepBeforeRetry($attempt);
+                $attempt++;
+                continue;
+            }
+
+            $this->referer = $resolved;
+
+            return $response;
+        }
+    }
+
+    private function isRetryable(int $statusCode): bool
+    {
+        return in_array($statusCode, self::RETRYABLE_STATUSES, true);
+    }
+
+    private function sleepBeforeRetry(int $attempt): void
+    {
+        // 0.5s, 1s, 2s, ... (capped)
+        $delayMs = min(500 * (2 ** $attempt), 4000);
+        usleep($delayMs * 1000);
     }
 
     public function postForm(string $url, array $data, array $headers = []): Response

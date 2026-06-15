@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Shopier\Http;
 
 use Shopier\Exception\ShopierException;
+use Shopier\Exception\TimeoutException;
 
 /**
  * HTTP client that delegates to a curl-impersonate binary so requests carry a
@@ -170,10 +171,17 @@ final class CurlImpersonateHttpClient implements HttpClientInterface
         $exitCode = proc_close($process);
 
         if ($exitCode !== 0) {
+            $detail = trim($stderr) !== '' ? trim($stderr) : 'no error output';
+
+            // curl exit code 28 == operation timeout
+            if ($exitCode === 28) {
+                throw new TimeoutException('curl-impersonate request timed out: ' . $detail);
+            }
+
             throw new ShopierException(sprintf(
                 'curl-impersonate request failed (exit code %d): %s',
                 $exitCode,
-                trim($stderr) !== '' ? trim($stderr) : 'no error output'
+                $detail
             ));
         }
 
