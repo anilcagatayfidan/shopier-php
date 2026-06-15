@@ -84,9 +84,9 @@ $client = new Client($config);
 
 İlk kapsamda yalnızca `digital` ürün tipi desteklenir ve varsayılandır. `media` alanı en fazla 5 öğe alır. Her medya öğesinde `type=image`, `url` ve `placement` bulunmalıdır.
 
-`stockQuantity` resmi API'de zorunlu **değildir**, ancak gönderilmezse ürün stoğu 0
-kabul edilip **"tükendi"** olarak görünebilir. Satışa açık bir ürün için pozitif bir
-stok değeri vermeniz önerilir.
+`stockQuantity` resmi API'de zorunlu **değildir**. Gönderilmediğinde ürün stoğunun 0
+kabul edilip **"tükendi"** görünmesini önlemek için, bu alan belirtilmezse otomatik
+olarak `1` gönderilir. Farklı bir stok için değeri açıkça verin (`stockQuantity: 100`).
 
 ```php
 use Shopier\DTO\ProductCreateRequest;

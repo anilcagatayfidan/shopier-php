@@ -36,11 +36,9 @@ final class ProductCreateRequest
         ];
 
         // stockQuantity is optional in the API, but omitting it can make the
-        // product appear sold out (stock defaults to 0). Only send it when the
-        // caller set it explicitly so $extra can still override if needed.
-        if ($this->stockQuantity !== null) {
-            $payload['stockQuantity'] = $this->stockQuantity;
-        }
+        // product appear sold out (stock defaults to 0). Default to 1 when the
+        // caller did not set it (explicit value wins, then $extra, then 1).
+        $payload['stockQuantity'] = $this->stockQuantity ?? ($this->extra['stockQuantity'] ?? 1);
 
         return array_replace_recursive($this->extra, $payload);
     }
