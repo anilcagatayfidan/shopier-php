@@ -31,11 +31,13 @@ final class Webhooks
     ) {
     }
 
-    public function list(): array
+    public function list(?int $limit = null, ?int $page = null, ?string $sort = null): array
     {
+        $query = $this->buildListQuery($limit, $page, $sort);
+
         $response = $this->httpClient->request(
             'GET',
-            $this->config->apiBaseUrl() . 'webhooks',
+            $this->config->apiBaseUrl() . 'webhooks' . $query,
             $this->headers(),
             null,
             null,
@@ -112,6 +114,39 @@ final class Webhooks
         $this->assertSuccessful($response);
 
         return true;
+    }
+
+    private function buildListQuery(?int $limit, ?int $page, ?string $sort): string
+    {
+        $params = [];
+
+        if ($limit !== null) {
+            if ($limit < 1 || $limit > 50) {
+                throw new ValidationException('Webhook list limit must be between 1 and 50.');
+            }
+
+            $params['limit'] = $limit;
+        }
+
+        if ($page !== null) {
+            if ($page < 1) {
+                throw new ValidationException('Webhook list page must be greater than zero.');
+            }
+
+            $params['page'] = $page;
+        }
+
+        if ($sort !== null) {
+            $sort = strtolower($sort);
+
+            if (!in_array($sort, ['asc', 'desc'], true)) {
+                throw new ValidationException('Webhook list sort must be "asc" or "desc".');
+            }
+
+            $params['sort'] = $sort;
+        }
+
+        return $params === [] ? '' : '?' . http_build_query($params);
     }
 
     private function validateCreate(string $url, string $event): void

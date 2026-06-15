@@ -10,6 +10,7 @@ final class WebhookSubscription
         public readonly string $id,
         public readonly string $url,
         public readonly string $event,
+        public readonly ?string $token = null,
         public readonly array $data = []
     ) {
     }
@@ -23,16 +24,27 @@ final class WebhookSubscription
         $id = $data['id'] ?? $data['webhookId'] ?? $data['webhook_id'] ?? '';
         $url = $data['url'] ?? $data['endpoint'] ?? '';
         $event = $data['event'] ?? $data['eventName'] ?? $data['event_name'] ?? '';
+        $token = $data['token'] ?? $data['webhook_token'] ?? $data['webhookToken'] ?? null;
 
-        return new self((string) $id, (string) $url, (string) $event, $data);
+        return new self((string) $id, (string) $url, (string) $event, $token !== null ? (string) $token : null, $data);
     }
 
     public function toArray(): array
     {
-        return $this->data !== [] ? $this->data : [
+        if ($this->data !== []) {
+            return $this->data;
+        }
+
+        $array = [
             'id' => $this->id,
             'url' => $this->url,
             'event' => $this->event,
         ];
+
+        if ($this->token !== null) {
+            $array['token'] = $this->token;
+        }
+
+        return $array;
     }
 }

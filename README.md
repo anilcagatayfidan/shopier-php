@@ -115,10 +115,17 @@ Desteklenen event değerleri:
 ```php
 $subscriptions = $client->webhooks()->list();
 
+// İsteğe bağlı sayfalama (limit: 1-50, varsayılan 10; page: >=1; sort: asc|desc)
+$subscriptions = $client->webhooks()->list(limit: 50, page: 1, sort: 'desc');
+
 $subscription = $client->webhooks()->create(
     url: 'https://example.com/shopier/webhook',
     event: 'order.created'
 );
+
+// token yalnızca create yanıtında döner ve webhook payload imzalarını doğrulamak
+// için kullanılır. Güvenli bir yerde saklayın; sonraki list çağrılarında dönmez.
+$webhookToken = $subscription->token;
 
 $client->webhooks()->delete($subscription->id);
 ```
