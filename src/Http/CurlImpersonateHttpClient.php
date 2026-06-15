@@ -94,6 +94,9 @@ final class CurlImpersonateHttpClient implements HttpClientInterface
         }
 
         $command[] = '-s';                       // silent
+        $command[] = '--compressed';             // request + transparently decode gzip/br/zstd
+                                                 // (Chrome impersonation sends Accept-Encoding: gzip, br, zstd;
+                                                 // without this the body stays compressed and JSON parsing fails)
         $command[] = '-L';                       // follow redirects (cookie engine carries cookies across hops)
         $command[] = '--max-redirs';
         $command[] = (string) self::MAX_REDIRECTS;

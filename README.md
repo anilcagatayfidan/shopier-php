@@ -243,7 +243,10 @@ bir bot parmak izi taşır ve header eklemek bunu **değiştirmez**. Çözüm, g
 parmak izini taklit eden [curl-impersonate](https://github.com/lwthiker/curl-impersonate)
 kullanmaktır.
 
-Paket bunun için hazır bir `HttpClientInterface` implementasyonu sağlar:
+Paket bunun için hazır bir `HttpClientInterface` implementasyonu sağlar. Impersonation
+yalnızca **storefront/checkout** isteklerinde gereklidir; resmi REST API (api.shopier.com)
+düz cURL ile sorunsuz çalışır ve impersonate edilmesine gerek yoktur. Bu yüzden
+impersonation istemcisini `storefrontHttpClient` parametresiyle verin:
 
 ```php
 use Shopier\Client;
@@ -251,16 +254,18 @@ use Shopier\Http\CurlImpersonateHttpClient;
 
 $client = new Client(
     $config,
-    new CurlImpersonateHttpClient(
+    storefrontHttpClient: new CurlImpersonateHttpClient(
         binary: 'curl-impersonate-chrome', // PATH'te olmalı veya tam yol verin
         target: 'chrome116'
     )
 );
+// REST API -> düz cURL, storefront/checkout -> curl-impersonate
 ```
 
 Sunucuya curl-impersonate kurulu olmalıdır (binary PATH'te ya da tam yol ile
 verilmeli). Bu istemci `proc_open` ile (shell injection'sız) binary'e devreder;
-redirect'leri ve cookie'leri kendisi yönetir.
+`--compressed` ile gzip/br/zstd yanıtlarını çözer, redirect'leri ve cookie'leri
+kendisi yönetir.
 
 **Alternatif (kod değişikliği gerektirmez):** `libcurl-impersonate`'i `LD_PRELOAD`
 ile yükleyip `CURL_IMPERSONATE=chrome116` ortam değişkenini ayarlarsanız, varsayılan

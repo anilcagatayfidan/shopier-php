@@ -20,19 +20,31 @@ final class Client
     private Orders $orders;
     private PaymentUrlGenerator $checkout;
 
+    /**
+     * @param HttpClientInterface|null $httpClient           Client for the official REST API
+     *                                                       (api.shopier.com). Defaults to plain cURL.
+     * @param HttpClientInterface|null $storefrontHttpClient Client for the storefront/checkout flow
+     *                                                       (www.shopier.com). Use a TLS-impersonation
+     *                                                       client here to pass Cloudflare. Defaults to
+     *                                                       $httpClient. The REST API works fine with
+     *                                                       plain cURL, so impersonation is best scoped
+     *                                                       to the storefront only.
+     */
     public function __construct(
         Config|string $config,
-        ?HttpClientInterface $httpClient = null
+        ?HttpClientInterface $httpClient = null,
+        ?HttpClientInterface $storefrontHttpClient = null
     ) {
         $config = is_string($config) ? new Config($config) : $config;
         $httpClient ??= new CurlHttpClient();
+        $storefrontHttpClient ??= $httpClient;
 
         $this->products = new Products($config, $httpClient);
         $this->webhooks = new Webhooks($config, $httpClient);
         $this->orders = new Orders($config, $httpClient);
         $this->checkout = new PaymentUrlGenerator(
             $this->products,
-            new BrowserSession($config, $httpClient),
+            new BrowserSession($config, $storefrontHttpClient),
             new HtmlParser(),
             $config
         );
