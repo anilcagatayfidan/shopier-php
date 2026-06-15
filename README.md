@@ -215,6 +215,21 @@ $result = $client->checkout()->createProductAndPaymentUrl(
 echo $result->paymentUrl;
 ```
 
+### Storefront / 403 ve bot koruması hakkında
+
+Ödeme URL üretimi resmi API değildir; Shopier mağaza (storefront) sayfalarını bir
+tarayıcı gibi çağırır. Bu istekler artık gerçekçi bir tarayıcı UA'sı, tam tarayıcı
+header seti (Accept-Language, Sec-Fetch-*, Upgrade-Insecure-Requests, Referer),
+redirect takibi ve adımlar arası ortak cookie jar ile gönderilir.
+
+Buna rağmen `CheckoutFlowException` ile **HTTP 403** alıyorsanız ve hata mesajı bir
+**bot/JS challenge** (Cloudflare "Just a moment..." / "Attention Required") içeriyorsa,
+bu yalnızca header ekleyerek aşılamaz. Bu durumda engel datacenter/sunucu IP'sine
+ve JavaScript challenge'ına dayanır; çözüm için gerçek bir tarayıcı oturumundan
+alınmış cookie'leri kullanmanız veya resmi bir ödeme-linki ucu beklemeniz gerekir.
+Header/UA özelleştirmesi için `HttpClientInterface` kendi implementasyonunuzla
+değiştirilebilir ve `Config(userAgent: ...)` ile UA ayarlanabilir.
+
 ## Hata yönetimi
 
 ```php

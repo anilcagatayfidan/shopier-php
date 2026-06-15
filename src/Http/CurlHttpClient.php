@@ -8,6 +8,8 @@ use Shopier\Exception\ShopierException;
 
 final class CurlHttpClient implements HttpClientInterface
 {
+    private const MAX_REDIRECTS = 5;
+
     public function request(
         string $method,
         string $url,
@@ -15,6 +17,44 @@ final class CurlHttpClient implements HttpClientInterface
         ?string $body = null,
         ?CookieJar $cookieJar = null,
         ?int $timeout = null
+    ): Response {
+        $method = strtoupper($method);
+        $redirects = 0;
+
+        while (true) {
+            $response = $this->executeSingle($method, $url, $headers, $body, $cookieJar, $timeout);
+
+            if ($cookieJar !== null) {
+                $cookieJar->addFromResponse($response);
+            }
+
+            $location = $response->header('location');
+
+            if (!$this->isRedirect($response->statusCode()) || $location === null || $redirects >= self::MAX_REDIRECTS) {
+                return $response;
+            }
+
+            $url = $this->resolveLocation($url, $location);
+            $redirects++;
+
+            // Browsers turn the redirected navigation into a GET and drop the body
+            // (303 always, and in practice for 301/302 after a POST as well).
+            if ($method !== 'HEAD') {
+                $method = 'GET';
+            }
+
+            $body = null;
+            $headers = $this->stripBodyHeaders($headers);
+        }
+    }
+
+    private function executeSingle(
+        string $method,
+        string $url,
+        array $headers,
+        ?string $body,
+        ?CookieJar $cookieJar,
+        ?int $timeout
     ): Response {
         $handle = curl_init($url);
 
@@ -30,8 +70,11 @@ final class CurlHttpClient implements HttpClientInterface
         }
 
         curl_setopt_array($handle, [
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_CUSTOMREQUEST => $method,
             CURLOPT_RETURNTRANSFER => true,
+            // Redirects are followed manually (see request()) so the cookie jar is
+            // updated and re-applied on every hop; cURL's own follow would not
+            // re-send cookies captured from intermediate responses.
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => $timeout ?? 30,
             CURLOPT_TIMEOUT => $timeout ?? 30,
@@ -71,13 +114,55 @@ final class CurlHttpClient implements HttpClientInterface
         $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);
 
-        $response = new Response($statusCode, $responseHeaders, (string) $rawBody);
+        return new Response($statusCode, $responseHeaders, (string) $rawBody);
+    }
 
-        if ($cookieJar !== null) {
-            $cookieJar->addFromResponse($response);
+    private function isRedirect(int $statusCode): bool
+    {
+        return in_array($statusCode, [301, 302, 303, 307, 308], true);
+    }
+
+    private function resolveLocation(string $currentUrl, string $location): string
+    {
+        if (preg_match('/^https?:\/\//i', $location) === 1) {
+            return $location;
         }
 
-        return $response;
+        $parts = parse_url($currentUrl);
+
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            return $location;
+        }
+
+        $origin = $parts['scheme'] . '://' . $parts['host'];
+
+        if (isset($parts['port'])) {
+            $origin .= ':' . $parts['port'];
+        }
+
+        if (str_starts_with($location, '/')) {
+            return $origin . $location;
+        }
+
+        $path = $parts['path'] ?? '/';
+        $base = substr($path, 0, strrpos($path, '/') + 1);
+
+        return $origin . $base . $location;
+    }
+
+    /**
+     * @param array<int|string, string> $headers
+     * @return array<int|string, string>
+     */
+    private function stripBodyHeaders(array $headers): array
+    {
+        foreach ($headers as $name => $value) {
+            if (is_string($name) && strtolower($name) === 'content-type') {
+                unset($headers[$name]);
+            }
+        }
+
+        return $headers;
     }
 
     private function normalizeHeaders(array $headers): array
