@@ -1,0 +1,17 @@
+{
+  "name": "shopier-php/shopier-php",
+  "description": "Educational dependency-light PHP client for selected Shopier REST API and checkout flows.",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Shopier\\": "src/"
+    }
+  },
+  "minimum-stability": "stable"
+}
