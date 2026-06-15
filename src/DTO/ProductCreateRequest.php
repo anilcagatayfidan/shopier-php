@@ -15,6 +15,7 @@ final class ProductCreateRequest
         public readonly int|float|string $price,
         public readonly string $shippingPayer = 'sellerPays',
         public readonly string $type = 'digital',
+        public readonly ?int $stockQuantity = null,
         public readonly array $extra = []
     ) {
     }
@@ -23,7 +24,7 @@ final class ProductCreateRequest
     {
         $this->validate();
 
-        return array_replace_recursive($this->extra, [
+        $payload = [
             'title' => $this->title,
             'type' => $this->type,
             'media' => $this->media,
@@ -32,7 +33,16 @@ final class ProductCreateRequest
                 'price' => $this->price,
             ],
             'shippingPayer' => $this->shippingPayer,
-        ]);
+        ];
+
+        // stockQuantity is optional in the API, but omitting it can make the
+        // product appear sold out (stock defaults to 0). Only send it when the
+        // caller set it explicitly so $extra can still override if needed.
+        if ($this->stockQuantity !== null) {
+            $payload['stockQuantity'] = $this->stockQuantity;
+        }
+
+        return array_replace_recursive($this->extra, $payload);
     }
 
     public function validate(): void
@@ -85,6 +95,10 @@ final class ProductCreateRequest
 
         if (!in_array($this->shippingPayer, ['sellerPays', 'buyerPays'], true)) {
             throw new ValidationException('Shipping payer must be sellerPays or buyerPays.');
+        }
+
+        if ($this->stockQuantity !== null && $this->stockQuantity < 0) {
+            throw new ValidationException('Product stock quantity must not be negative.');
         }
     }
 }
