@@ -100,6 +100,45 @@ $request = new ProductCreateRequest(
 $product = $client->products()->create($request);
 ```
 
+## Sipariş işlemleri
+
+Siparişleri listeleme, tekil sipariş getirme, sipariş güncelleme (kapatma / kargo
+adresi değiştirme) ve sipariş işlem/finans bilgisini çekme desteklenir.
+
+```php
+// Listeleme — desteklenen filtreler:
+// dateStart, dateEnd (yyyy-MM-ddTHH:mm:ssZ), fulfillmentStatus (unfulfilled|fulfilled),
+// refundType (none|partial|full), customerEmail, customerPhone, productId,
+// limit (1-50, vars. 10), page (>=1), sort (dateAsc|dateDesc, vars. dateDesc)
+$orders = $client->orders()->list([
+    'fulfillmentStatus' => 'unfulfilled',
+    'limit' => 50,
+    'sort' => 'dateDesc',
+]);
+
+foreach ($orders as $order) {
+    if ($order->isPaid()) {
+        // $order->id, $order->totals, $order->lineItems, $order->shippingInfo ...
+    }
+}
+
+// Tekil sipariş
+$order = $client->orders()->get('ORDER_ID');
+
+// Siparişi güncelle (kapatma için fulfillments, adres için shippingInfo)
+$order = $client->orders()->update('ORDER_ID', [
+    'fulfillments' => [/* teslimat detayları */],
+]);
+
+// Ek finans bilgisi (taksit vb.)
+$transaction = $client->orders()->transaction('ORDER_ID');
+```
+
+`Order` modelindeki alanlar: `id`, `status` (fulfilled|unfulfilled), `paymentStatus`
+(paid|unpaid), `installments`, `paymentMethod`, `currency`, `dateCreated`, `totals`,
+`discounts`, `shippingInfo`, `billingInfo`, `note`, `lineItems`, `fulfillments`,
+`returns`, `refunds`. Ham yanıta `$order->toArray()` ile erişebilirsiniz.
+
 ## Webhook işlemleri
 
 Desteklenen event değerleri:

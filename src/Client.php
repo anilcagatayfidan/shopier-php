@@ -9,6 +9,7 @@ use Shopier\Checkout\HtmlParser;
 use Shopier\Checkout\PaymentUrlGenerator;
 use Shopier\Http\CurlHttpClient;
 use Shopier\Http\HttpClientInterface;
+use Shopier\Resources\Orders;
 use Shopier\Resources\Products;
 use Shopier\Resources\Webhooks;
 
@@ -16,6 +17,7 @@ final class Client
 {
     private Products $products;
     private Webhooks $webhooks;
+    private Orders $orders;
     private PaymentUrlGenerator $checkout;
 
     public function __construct(
@@ -27,6 +29,7 @@ final class Client
 
         $this->products = new Products($config, $httpClient);
         $this->webhooks = new Webhooks($config, $httpClient);
+        $this->orders = new Orders($config, $httpClient);
         $this->checkout = new PaymentUrlGenerator(
             $this->products,
             new BrowserSession($config, $httpClient),
@@ -43,6 +46,11 @@ final class Client
     public function webhooks(): Webhooks
     {
         return $this->webhooks;
+    }
+
+    public function orders(): Orders
+    {
+        return $this->orders;
     }
 
     public function checkout(): PaymentUrlGenerator
