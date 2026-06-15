@@ -235,6 +235,42 @@ alınmış cookie'leri kullanmanız veya resmi bir ödeme-linki ucu beklemeniz g
 Header/UA özelleştirmesi için `HttpClientInterface` kendi implementasyonunuzla
 değiştirilebilir ve `Config(userAgent: ...)` ile UA ayarlanabilir.
 
+### TLS impersonation ile 403 / Cloudflare aşma
+
+Cloudflare datacenter IP'lerinde genelde isteğin **TLS/JA3 ve HTTP/2 parmak izini**
+inceleyip "bu gerçek tarayıcı mı?" diye karar verir. PHP'nin standart cURL'ü tanınabilir
+bir bot parmak izi taşır ve header eklemek bunu **değiştirmez**. Çözüm, gerçek bir Chrome
+parmak izini taklit eden [curl-impersonate](https://github.com/lwthiker/curl-impersonate)
+kullanmaktır.
+
+Paket bunun için hazır bir `HttpClientInterface` implementasyonu sağlar:
+
+```php
+use Shopier\Client;
+use Shopier\Http\CurlImpersonateHttpClient;
+
+$client = new Client(
+    $config,
+    new CurlImpersonateHttpClient(
+        binary: 'curl-impersonate-chrome', // PATH'te olmalı veya tam yol verin
+        target: 'chrome116'
+    )
+);
+```
+
+Sunucuya curl-impersonate kurulu olmalıdır (binary PATH'te ya da tam yol ile
+verilmeli). Bu istemci `proc_open` ile (shell injection'sız) binary'e devreder;
+redirect'leri ve cookie'leri kendisi yönetir.
+
+**Alternatif (kod değişikliği gerektirmez):** `libcurl-impersonate`'i `LD_PRELOAD`
+ile yükleyip `CURL_IMPERSONATE=chrome116` ortam değişkenini ayarlarsanız, varsayılan
+`CurlHttpClient` otomatik olarak Chrome parmak izini gönderir.
+
+> Sınır: TLS impersonation yalnızca **pasif parmak izi** tespitini aşar; JavaScript
+> çalıştırmaz. Cloudflare yine de etkileşimli bir JS challenge sayfası ("Just a
+> moment...") döndürürse, bunu geçmek için gerçek bir headless tarayıcı gerekir.
+> Ayrıca temiz/residential bir çıkış IP'si başarı oranını önemli ölçüde artırır.
+
 ## Hata yönetimi
 
 ```php
